@@ -5,9 +5,9 @@
 #   Generate evenly spaced, rectangular map sheets along a route.
 #   Sheet size is defined by print dimensions (mm) and map scale,
 #   so ground coverage is derived automatically.
-#   Supports selecting one or more line features as the route.
-#   Output layer has sheet-number labels pre-configured with
-#   correct rotation so they align with each sheet's orientation.
+#   Supports selecting one or more line features as the route;
+#   segments are automatically sorted and chained into a single
+#   continuous polyline so numbering and rotation are consistent.
 #
 # Workflow:
 #   1. Run this script in the QGIS Python Console.
@@ -60,6 +60,54 @@ def make_rect(center, azimuth_deg, width, height):
 
 
 # ---------------------------------------------------------------
+# LINE CHAINING
+# ---------------------------------------------------------------
+def chain_lines(geoms):
+    """
+    Sort and merge a list of line geometries into a single continuous
+    polyline. Segments are chained greedily end-to-start; any segment
+    whose end is closer to the current tip than its start is flipped.
+    Returns a single QgsGeometry (LineString).
+    """
+    # Flatten to a list of vertex lists
+    lines = []
+    for g in geoms:
+        if g.isMultipart():
+            for part in g.asMultiPolyline():
+                lines.append([QgsPointXY(p) for p in part])
+        else:
+            lines.append([QgsPointXY(p) for p in g.asPolyline()])
+
+    if len(lines) == 1:
+        return QgsGeometry.fromPolylineXY(lines[0])
+
+    ordered = [lines.pop(0)]
+
+    while lines:
+        tip = ordered[-1][-1]
+        best_idx, best_dist, best_flip = 0, float('inf'), False
+        for i, line in enumerate(lines):
+            d_start = tip.distance(line[0])
+            d_end   = tip.distance(line[-1])
+            if d_start < best_dist:
+                best_dist, best_idx, best_flip = d_start, i, False
+            if d_end < best_dist:
+                best_dist, best_idx, best_flip = d_end, i, True
+
+        seg = lines.pop(best_idx)
+        if best_flip:
+            seg = list(reversed(seg))
+        ordered.append(seg)
+
+    # Concatenate, dropping the duplicate junction points
+    all_pts = ordered[0][:]
+    for seg in ordered[1:]:
+        all_pts.extend(seg[1:])
+
+    return QgsGeometry.fromPolylineXY(all_pts)
+
+
+# ---------------------------------------------------------------
 # LABEL SETUP
 # ---------------------------------------------------------------
 def apply_labels(layer):
@@ -68,7 +116,6 @@ def apply_labels(layer):
     pal.isExpression = True
     pal.placement = Qgis.LabelPlacement.Horizontal
 
-    # Rotate label to match sheet orientation
     pal.dataDefinedProperties().setProperty(
         QgsPalLayerSettings.LabelRotation,
         QgsProperty.fromExpression('(180 - "azi") % 360')
@@ -254,8 +301,7 @@ class MapSheetDialog(QDialog):
                 print("Layer has no features.")
                 return
 
-        geoms = [f.geometry() for f in features]
-        route_geom = geoms[0] if len(geoms) == 1 else QgsGeometry.collectGeometry(geoms)
+        route_geom = chain_lines([f.geometry() for f in features])
 
         w_m, h_m = self._ground_size()
         generate_sheets(
