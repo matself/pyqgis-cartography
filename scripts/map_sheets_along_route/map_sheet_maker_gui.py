@@ -1,14 +1,15 @@
 # ===============================================================
-# MAP-SHEET GENERATOR FOR QGIS ATLAS  –  GUI version
+# MAP-SHEET GENERATOR FOR QGIS ATLAS  -  GUI version
 # ---------------------------------------------------------------
 # Purpose:
 #   Generate evenly spaced, rectangular map sheets along a route.
-#   Opens a dialog to configure width, height, overlap, and which
-#   layer/feature to use before generating.
+#   Sheet size is defined by print dimensions (mm) and map scale,
+#   so ground coverage is derived automatically.
+#   Supports selecting one or more line features as the route.
 #
 # Workflow:
 #   1. Run this script in the QGIS Python Console.
-#   2. Select layer and options in the dialog, then click Run.
+#   2. Configure options in the dialog, then click Run.
 #   3. A new memory layer "map_sheets" is created.
 #   4. Use this layer as Atlas coverage layer.
 #   5. In the Layout, set map rotation expression to:
@@ -16,7 +17,7 @@
 #
 # Collaboration:
 #   Developed jointly through discussion between
-#   Mats Elfström & ChatGPT (GPT-5), 2025.
+#   Mats Elfstrom & ChatGPT (GPT-5), 2025.
 #
 # License:
 #   Free to use and modify. Attribution appreciated.
@@ -27,7 +28,7 @@ from qgis.core import (
     QgsGeometry, QgsPointXY, QgsWkbTypes
 )
 from qgis.PyQt.QtWidgets import (
-    QDialog, QFormLayout, QComboBox, QDoubleSpinBox,
+    QDialog, QFormLayout, QComboBox, QDoubleSpinBox, QSpinBox,
     QDialogButtonBox, QLabel, QCheckBox, QVBoxLayout, QGroupBox
 )
 from qgis.PyQt.QtCore import QVariant
@@ -38,10 +39,6 @@ import math
 # GEOMETRY HELPER
 # ---------------------------------------------------------------
 def make_rect(center, azimuth_deg, width, height):
-    """
-    Rectangle centered on 'center', rotated by azimuth_deg
-    (mathematical convention: 0° = east, CCW positive).
-    """
     ang = math.radians(azimuth_deg)
     dx = math.sin(ang)
     dy = math.cos(ang)
@@ -59,8 +56,8 @@ def make_rect(center, azimuth_deg, width, height):
 # ---------------------------------------------------------------
 # CORE GENERATOR
 # ---------------------------------------------------------------
-def generate_sheets(route_geom, crs_authid, width, height, overlap_pct):
-    step = width * (1.0 - overlap_pct / 100.0)
+def generate_sheets(route_geom, crs_authid, width_m, height_m, overlap_pct):
+    step = width_m * (1.0 - overlap_pct / 100.0)
     route_length = route_geom.length()
 
     out = QgsVectorLayer(f"Polygon?crs={crs_authid}", "map_sheets", "memory")
@@ -85,7 +82,7 @@ def generate_sheets(route_geom, crs_authid, width, height, overlap_pct):
         feat["x"]   = pt.x()
         feat["y"]   = pt.y()
         feat["azi"] = azi
-        feat.setGeometry(make_rect(QgsPointXY(pt), azi + 90, width, height))
+        feat.setGeometry(make_rect(QgsPointXY(pt), azi + 90, width_m, height_m))
         prov.addFeature(feat)
 
         sheet_id += 1
@@ -93,7 +90,8 @@ def generate_sheets(route_geom, crs_authid, width, height, overlap_pct):
 
     out.updateExtents()
     QgsProject.instance().addMapLayer(out)
-    print(f"✅ Created {sheet_id - 1} map sheets.")
+    print(f"Created {sheet_id - 1} map sheets "
+          f"({width_m:.1f} x {height_m:.1f} m ground, step {step:.1f} m).")
     print('Use rotation expression in layout:   (180 - "azi") % 360')
 
 
@@ -105,7 +103,7 @@ class MapSheetDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Map Sheet Generator")
-        self.setMinimumWidth(360)
+        self.setMinimumWidth(380)
 
         root = QVBoxLayout(self)
 
@@ -122,26 +120,49 @@ class MapSheetDialog(QDialog):
         for l in self._line_layers:
             self.layer_combo.addItem(l.name())
 
-        self.selected_only = QCheckBox("Use selected feature only")
+        self.selected_only = QCheckBox("Use selected features only")
         self.selected_only.setChecked(True)
 
         layer_form.addRow("Layer:", self.layer_combo)
         layer_form.addRow("", self.selected_only)
         root.addWidget(layer_group)
 
-        # --- Sheet parameters group ---
-        param_group = QGroupBox("Sheet parameters")
-        param_form  = QFormLayout(param_group)
+        # --- Print / scale group ---
+        print_group = QGroupBox("Print sheet size")
+        print_form  = QFormLayout(print_group)
 
-        self.width_spin = QDoubleSpinBox()
-        self.width_spin.setRange(1, 10000)
-        self.width_spin.setSuffix(" m")
-        self.width_spin.setValue(280.0)
+        self.print_width_spin = QDoubleSpinBox()
+        self.print_width_spin.setRange(1, 10000)
+        self.print_width_spin.setSuffix(" mm")
+        self.print_width_spin.setValue(280.0)
+        self.print_width_spin.valueChanged.connect(self._update_ground_label)
 
-        self.height_spin = QDoubleSpinBox()
-        self.height_spin.setRange(1, 10000)
-        self.height_spin.setSuffix(" m")
-        self.height_spin.setValue(180.0)
+        self.print_height_spin = QDoubleSpinBox()
+        self.print_height_spin.setRange(1, 10000)
+        self.print_height_spin.setSuffix(" mm")
+        self.print_height_spin.setValue(180.0)
+        self.print_height_spin.valueChanged.connect(self._update_ground_label)
+
+        self.scale_spin = QSpinBox()
+        self.scale_spin.setRange(1, 1000000)
+        self.scale_spin.setPrefix("1 : ")
+        self.scale_spin.setSingleStep(500)
+        self.scale_spin.setValue(1000)
+        self.scale_spin.valueChanged.connect(self._update_ground_label)
+
+        self.ground_label = QLabel()
+        self.ground_label.setStyleSheet("color: gray;")
+        self._update_ground_label()
+
+        print_form.addRow("Width:", self.print_width_spin)
+        print_form.addRow("Height:", self.print_height_spin)
+        print_form.addRow("Scale:", self.scale_spin)
+        print_form.addRow("Ground coverage:", self.ground_label)
+        root.addWidget(print_group)
+
+        # --- Overlap ---
+        overlap_group = QGroupBox("Sheet overlap")
+        overlap_form  = QFormLayout(overlap_group)
 
         self.overlap_spin = QDoubleSpinBox()
         self.overlap_spin.setRange(0, 90)
@@ -149,10 +170,8 @@ class MapSheetDialog(QDialog):
         self.overlap_spin.setSingleStep(5)
         self.overlap_spin.setValue(10.0)
 
-        param_form.addRow("Width:", self.width_spin)
-        param_form.addRow("Height:", self.height_spin)
-        param_form.addRow("Overlap:", self.overlap_spin)
-        root.addWidget(param_group)
+        overlap_form.addRow("Overlap:", self.overlap_spin)
+        root.addWidget(overlap_group)
 
         # --- Hint label ---
         hint = QLabel('Layout rotation: <tt>(180 - "azi") % 360</tt>')
@@ -166,10 +185,20 @@ class MapSheetDialog(QDialog):
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
 
+    def _ground_size(self):
+        scale = self.scale_spin.value()
+        w_m = self.print_width_spin.value()  * scale / 1000.0
+        h_m = self.print_height_spin.value() * scale / 1000.0
+        return w_m, h_m
+
+    def _update_ground_label(self):
+        w_m, h_m = self._ground_size()
+        self.ground_label.setText(f"{w_m:.1f} x {h_m:.1f} m")
+
     def _run(self):
         idx = self.layer_combo.currentIndex()
         if idx < 0 or not self._line_layers:
-            print("❌ No line layer found.")
+            print("No line layer found.")
             self.reject()
             return
 
@@ -178,21 +207,23 @@ class MapSheetDialog(QDialog):
         if self.selected_only.isChecked():
             features = layer.selectedFeatures()
             if not features:
-                print("❌ No feature selected. Select one polyline and try again.")
+                print("No features selected. Select one or more polylines and try again.")
                 return
-            route_geom = features[0].geometry()
         else:
             features = list(layer.getFeatures())
             if not features:
-                print("❌ Layer has no features.")
+                print("Layer has no features.")
                 return
-            route_geom = QgsGeometry.collectGeometry([f.geometry() for f in features])
 
+        geoms = [f.geometry() for f in features]
+        route_geom = geoms[0] if len(geoms) == 1 else QgsGeometry.collectGeometry(geoms)
+
+        w_m, h_m = self._ground_size()
         generate_sheets(
             route_geom,
             layer.crs().authid(),
-            self.width_spin.value(),
-            self.height_spin.value(),
+            w_m,
+            h_m,
             self.overlap_spin.value(),
         )
         self.accept()
