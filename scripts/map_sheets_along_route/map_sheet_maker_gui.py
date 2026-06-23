@@ -26,6 +26,7 @@
 # ===============================================================
 
 from qgis.core import (
+    Qgis,
     QgsProject, QgsVectorLayer, QgsField, QgsFeature,
     QgsGeometry, QgsPointXY, QgsWkbTypes,
     QgsPalLayerSettings, QgsTextFormat, QgsTextBufferSettings,
@@ -65,7 +66,7 @@ def apply_labels(layer):
     pal = QgsPalLayerSettings()
     pal.fieldName = '"id"'
     pal.isExpression = True
-    pal.placement = QgsPalLayerSettings.OverPoint
+    pal.placement = Qgis.LabelPlacement.Horizontal
 
     # Rotate label to match sheet orientation
     pal.dataDefinedProperties().setProperty(
