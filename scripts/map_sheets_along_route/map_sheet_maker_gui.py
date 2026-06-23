@@ -69,7 +69,6 @@ def chain_lines(geoms):
     whose end is closer to the current tip than its start is flipped.
     Returns a single QgsGeometry (LineString).
     """
-    # Flatten to a list of vertex lists
     lines = []
     for g in geoms:
         if g.isMultipart():
@@ -99,7 +98,6 @@ def chain_lines(geoms):
             seg = list(reversed(seg))
         ordered.append(seg)
 
-    # Concatenate, dropping the duplicate junction points
     all_pts = ordered[0][:]
     for seg in ordered[1:]:
         all_pts.extend(seg[1:])
@@ -116,6 +114,10 @@ def apply_labels(layer):
     pal.isExpression = True
     pal.placement = Qgis.LabelPlacement.Horizontal
 
+    # Honour the data-defined rotation — don't auto-correct "upside-down" labels
+    pal.upsidedownLabels = QgsPalLayerSettings.ShowDefined
+
+    # Rotate label to match sheet orientation
     pal.dataDefinedProperties().setProperty(
         QgsPalLayerSettings.LabelRotation,
         QgsProperty.fromExpression('(180 - "azi") % 360')
