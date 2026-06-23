@@ -6,6 +6,8 @@
 #   Sheet size is defined by print dimensions (mm) and map scale,
 #   so ground coverage is derived automatically.
 #   Supports selecting one or more line features as the route.
+#   Output layer has sheet-number labels pre-configured with
+#   correct rotation so they align with each sheet's orientation.
 #
 # Workflow:
 #   1. Run this script in the QGIS Python Console.
@@ -25,13 +27,16 @@
 
 from qgis.core import (
     QgsProject, QgsVectorLayer, QgsField, QgsFeature,
-    QgsGeometry, QgsPointXY, QgsWkbTypes
+    QgsGeometry, QgsPointXY, QgsWkbTypes,
+    QgsPalLayerSettings, QgsTextFormat, QgsTextBufferSettings,
+    QgsVectorLayerSimpleLabeling, QgsProperty
 )
 from qgis.PyQt.QtWidgets import (
     QDialog, QFormLayout, QComboBox, QDoubleSpinBox, QSpinBox,
     QDialogButtonBox, QLabel, QCheckBox, QVBoxLayout, QGroupBox
 )
 from qgis.PyQt.QtCore import QVariant
+from qgis.PyQt.QtGui import QFont, QColor
 import math
 
 
@@ -51,6 +56,38 @@ def make_rect(center, azimuth_deg, width, height):
     p3 = QgsPointXY(center.x() - px*hw - dx*hh, center.y() - py*hw - dy*hh)
     p4 = QgsPointXY(center.x() + px*hw - dx*hh, center.y() + py*hw - dy*hh)
     return QgsGeometry.fromPolygonXY([[p1, p2, p3, p4]])
+
+
+# ---------------------------------------------------------------
+# LABEL SETUP
+# ---------------------------------------------------------------
+def apply_labels(layer):
+    pal = QgsPalLayerSettings()
+    pal.fieldName = '"id"'
+    pal.isExpression = True
+    pal.placement = QgsPalLayerSettings.OverPoint
+
+    # Rotate label to match sheet orientation
+    pal.dataDefinedProperties().setProperty(
+        QgsPalLayerSettings.LabelRotation,
+        QgsProperty.fromExpression('(180 - "azi") % 360')
+    )
+
+    fmt = QgsTextFormat()
+    font = QFont("Arial", 10, QFont.Bold)
+    fmt.setFont(font)
+    fmt.setSize(10)
+    fmt.setColor(QColor("black"))
+
+    buf = QgsTextBufferSettings()
+    buf.setEnabled(True)
+    buf.setSize(1)
+    buf.setColor(QColor("white"))
+    fmt.setBuffer(buf)
+
+    pal.setFormat(fmt)
+    layer.setLabeling(QgsVectorLayerSimpleLabeling(pal))
+    layer.setLabelsEnabled(True)
 
 
 # ---------------------------------------------------------------
@@ -89,6 +126,7 @@ def generate_sheets(route_geom, crs_authid, width_m, height_m, overlap_pct):
         distance += step
 
     out.updateExtents()
+    apply_labels(out)
     QgsProject.instance().addMapLayer(out)
     print(f"Created {sheet_id - 1} map sheets "
           f"({width_m:.1f} x {height_m:.1f} m ground, step {step:.1f} m).")
