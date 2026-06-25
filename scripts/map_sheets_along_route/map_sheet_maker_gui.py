@@ -11,13 +11,8 @@
 #   2. Configure options in the dialog, then click Run.
 #   3. A new memory layer "map_sheets" is created.
 #   4. Use this layer as Atlas coverage layer.
-#   5. In the Layout, set map rotation expression to:
-#         (180 - "azi") % 360
-#
-# Label rotation:
-#   azi is a geographic bearing (0=N, 90=E, CW positive).
-#   Expression: ("azi" - 90 + 360) % 360
-#   upsidedownLabels = ShowAll (no auto-correction).
+#   5. In the Layout map item, set the data-defined Map rotation to:
+#         (90 - "azi" + 360) % 360
 #
 # Collaboration:
 #   Developed jointly through discussion between
@@ -97,7 +92,7 @@ def chain_lines(geoms):
 # ---------------------------------------------------------------
 def apply_symbol(layer):
     sl = QgsSimpleFillSymbolLayer.create({
-        'color': '190,178,151,0',       # transparent fill
+        'color': '190,178,151,0',
         'outline_color': '35,35,35,255',
         'outline_width': '0.46',
         'outline_width_unit': 'MM',
@@ -186,8 +181,7 @@ def run_generator(route, crs_authid, map_width, map_height, step):
     apply_symbol(out)
     apply_labels(out)
     QgsProject.instance().addMapLayer(out)
-    print(f'Created {sheet_id - 1} map sheets successfully.')
-    print('Layout rotation expression:  (180 - "azi") % 360')
+    print(f'Done — {sheet_id - 1} sheets created.')
 
 
 # ---------------------------------------------------------------
@@ -198,7 +192,7 @@ class MapSheetDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle('Map Sheet Generator')
-        self.setMinimumWidth(380)
+        self.setMinimumWidth(400)
 
         root = QVBoxLayout(self)
 
@@ -267,6 +261,20 @@ class MapSheetDialog(QDialog):
 
         overlap_form.addRow('Overlap:', self.overlap_spin)
         root.addWidget(overlap_group)
+
+        # --- Atlas setup instructions ---
+        atlas_group = QGroupBox('Atlas setup — Layout map item')
+        atlas_layout = QVBoxLayout(atlas_group)
+
+        for text in [
+            'Map rotation (data-defined):',
+            '  (90 - "azi" + 360) % 360',
+        ]:
+            lbl = QLabel(text)
+            lbl.setFont(QFont('Courier New', 9) if text.startswith(' ') else QFont())
+            atlas_layout.addWidget(lbl)
+
+        root.addWidget(atlas_group)
 
         # --- Buttons ---
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
