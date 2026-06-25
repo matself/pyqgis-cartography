@@ -294,31 +294,36 @@ class MapSheetDialog(QDialog):
         self.ground_label.setText(f'{w_m:.1f} x {h_m:.1f} m')
 
     def _run(self):
-        idx = self.layer_combo.currentIndex()
-        if idx < 0 or not self._line_layers:
-            print('No line layer found.')
-            self.reject()
-            return
-
-        layer = self._line_layers[idx]
-
-        if self.selected_only.isChecked():
-            features = layer.selectedFeatures()
-            if not features:
-                print('No features selected. Select one or more polylines and try again.')
-                return
-        else:
-            features = list(layer.getFeatures())
-            if not features:
-                print('Layer has no features.')
+        import traceback
+        try:
+            idx = self.layer_combo.currentIndex()
+            if idx < 0 or not self._line_layers:
+                print('Map Sheet Generator: no line layer found.')
+                self.reject()
                 return
 
-        route = chain_lines([f.geometry() for f in features])
-        w_m, h_m = self._ground_size()
-        step = w_m * (1.0 - self.overlap_spin.value() / 100.0)
+            layer = self._line_layers[idx]
 
-        run_generator(route, layer.crs().authid(), w_m, h_m, step)
-        self.accept()
+            if self.selected_only.isChecked():
+                features = list(layer.selectedFeatures())
+                if not features:
+                    print('Map Sheet Generator: no features selected — select one or more polylines and try again.')
+                    return
+            else:
+                features = list(layer.getFeatures())
+                if not features:
+                    print('Map Sheet Generator: layer has no features.')
+                    return
+
+            route = chain_lines([f.geometry() for f in features])
+            w_m, h_m = self._ground_size()
+            step = w_m * (1.0 - self.overlap_spin.value() / 100.0)
+
+            run_generator(route, layer.crs().authid(), w_m, h_m, step)
+            self.accept()
+        except Exception:
+            print('Map Sheet Generator error:')
+            traceback.print_exc()
 
 
 # ---------------------------------------------------------------
