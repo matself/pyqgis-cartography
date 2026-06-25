@@ -1,94 +1,37 @@
-Step-by-step: QGIS Atlas along a route
-0) Prereqs
+# Map Sheets Along Route
 
-Your sheet polygons layer exists (from the script), with fields:
+Generates a series of rotated map sheet polygons along a line route, suitable for use as an **Atlas coverage layer** in a QGIS Print Layout.
 
-id (sheet number)
+## Scripts
 
-azi (raw azimuth from the script)
+| File | Purpose |
+|------|---------|
+| `map_sheet_maker.py` | Original console script |
+| `map_sheet_maker_gui.py` | GUI version (recommended) |
 
-CRS is projected in meters (e.g. EPSG:3006).
+## Usage
 
-1) Create the layout
+1. Open the QGIS Python Console and run `map_sheet_maker_gui.py`.
+2. In the dialog, select your route layer (line geometry), set print size in mm, map scale, and overlap %.
+3. Click **Run** — a memory layer called `map_sheets` is added to the canvas with fields:
+   - `id` — sheet number (sequential along route)
+   - `azi` — geographic bearing of the sheet (0 = North, 90 = East, clockwise)
+   - `x`, `y` — centre point coordinates
 
-Project → Layout Manager → New… give it a name.
+## Atlas setup in Print Layout
 
-In the layout, set the page size:
+1. **Layout Manager** → New layout.
+2. **Add Map** — draw a map frame and set its size (e.g. 280 x 180 mm).
+3. **Atlas panel** → tick *Generate an atlas* → Coverage layer: `map_sheets` → Sort by: `id`.
+4. **Map frame -> Item Properties** → *Controlled by atlas* ON, Margin = 0 %.
+5. **Map frame -> Rotation** → click the data-defined button → Edit Expression:
 
-Either set Custom page to 280 × 180 mm (Landscape) to make each PDF page exactly that size,
+```
+(90 - "azi" + 360) % 360
+```
 
-or keep A4 and just use a 280×180 map frame (next step).
+6. Export via **Atlas -> Export Atlas as PDF**.
 
-2) Add the map frame (the thing that will rotate)
+## CRS requirement
 
-Click Add Map and draw a map frame.
-
-Select the map frame → Item Properties:
-
-Size → set Width = 280 mm, Height = 180 mm (if you didn’t make the whole page 280×180).
-
-Scale → set to 1:1000 (and leave it fixed).
-
-3) Enable Atlas
-
-Open the Atlas panel (right side). Tick Generate an atlas.
-
-Coverage layer → choose your rectangle layer.
-
-Sort by → id (ascending).
-
-Optional: tick Hide coverage layer if you don’t want the rectangles drawn on top.
-
-4) Make the map follow each sheet polygon
-
-With the map frame selected:
-
-In Item Properties → Controlled by atlas → ON.
-
-Margin = 0% (this makes the map extent match the polygon tightly).
-
-Click Set to current atlas feature (target icon) once to confirm behavior (optional).
-
-5) Rotate each page from the azi field
-
-Still with the map frame selected:
-
-Item Properties → Rotation → click the data-defined button → Edit Expression…
-
-Paste this (fixes azimuth system and makes the sheets perpendicular to the route):
-
-(180 - "azi") % 360
-
-
-If rotation appears mirrored, try:
-
-(180 + "azi") % 360
-
-6) Dynamic texts (optional but useful)
-
-Add a Label item, and set Text to something like:
-
-'Sheet ' || to_string("id")
-
-
-For a file name per page: Atlas → Output → Filename expression:
-
-'sheet_' || lpad(to_string("id"), 3, '0')
-
-7) Preview and export
-
-In the Atlas panel, click Preview Atlas and step through pages.
-
-Atlas → Export Atlas → PDF, pick an output folder.
-You’ll get one multi-page PDF or one file per page (depending on your choice).
-
-Quick troubleshooting
-
-Extent doesn’t fit the polygon: Map frame not set to Controlled by atlas or Margin ≠ 0%.
-
-Scale changes unexpectedly: Re-select the map frame and ensure Scale = 1:1000 (fixed).
-
-Rotation is off by 180°: swap to (180 + "azi") % 360.
-
-Wrong CRS sizing: Ensure the project and layer CRS are metric (not WGS84 degrees).
-
+The route layer must use a **projected CRS in metres** (e.g. EPSG:3006 for Sweden). The sheet dimensions are specified in metres on the ground.
