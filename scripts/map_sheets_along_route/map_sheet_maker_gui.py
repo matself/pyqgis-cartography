@@ -16,10 +16,8 @@
 #
 # Label rotation:
 #   azi is a geographic bearing (0=N, 90=E, CW positive).
-#   Labels are placed at the centroid and rotated so they read
-#   along the lower long edge of the sheet in sheet-number order.
-#   Expression used: ("azi" - 90 + 360) % 360
-#   upsidedownLabels = ShowAll (no auto-correction of rotation).
+#   Expression: ("azi" - 90 + 360) % 360
+#   upsidedownLabels = ShowAll (no auto-correction).
 #
 # Collaboration:
 #   Developed jointly through discussion between
@@ -34,7 +32,7 @@ from qgis.PyQt.QtWidgets import (
     QDialog, QFormLayout, QComboBox, QDoubleSpinBox, QSpinBox,
     QDialogButtonBox, QLabel, QCheckBox, QVBoxLayout, QGroupBox
 )
-from qgis.PyQt.QtCore import QVariant
+from qgis.PyQt.QtCore import QVariant, Qt
 from qgis.PyQt.QtGui import QFont, QColor
 import math
 
@@ -95,12 +93,24 @@ def chain_lines(geoms):
 
 
 # ---------------------------------------------------------------
-# LABEL SETUP
-# Label reads along the lower long edge in sheet-number order.
-# azi is geographic bearing (0=N, 90=E, CW).
-# QGIS label rotation is CW from east, so the conversion is:
-#   ("azi" - 90 + 360) % 360
-# ShowAll means QGIS will not auto-flip any label.
+# SYMBOL  — transparent fill, dark outline 0.46 mm
+# ---------------------------------------------------------------
+def apply_symbol(layer):
+    sl = QgsSimpleFillSymbolLayer.create({
+        'color': '190,178,151,0',       # transparent fill
+        'outline_color': '35,35,35,255',
+        'outline_width': '0.46',
+        'outline_width_unit': 'MM',
+        'style': 'solid',
+        'joinstyle': 'bevel',
+    })
+    symbol = QgsFillSymbol()
+    symbol.changeSymbolLayer(0, sl)
+    layer.setRenderer(QgsSingleSymbolRenderer(symbol))
+
+
+# ---------------------------------------------------------------
+# LABELS  — Arial Bold 18pt, rotated along sheet long edge
 # ---------------------------------------------------------------
 def apply_labels(layer):
     pal = QgsPalLayerSettings()
@@ -115,14 +125,20 @@ def apply_labels(layer):
     )
 
     fmt = QgsTextFormat()
-    fmt.setFont(QFont('Arial', 10, QFont.Bold))
-    fmt.setSize(10)
-    fmt.setColor(QColor('black'))
+    font = QFont('Arial', 18, QFont.Bold)
+    fmt.setFont(font)
+    fmt.setSize(18)
+    fmt.setSizeUnit(QgsUnitTypes.RenderPoints)
+    fmt.setColor(QColor(0, 0, 0, 255))
+    fmt.setOrientation(QgsTextFormat.HorizontalOrientation)
 
     buf = QgsTextBufferSettings()
     buf.setEnabled(True)
     buf.setSize(1)
-    buf.setColor(QColor('white'))
+    buf.setSizeUnit(QgsUnitTypes.RenderMillimeters)
+    buf.setColor(QColor(255, 255, 255, 255))
+    buf.setFillBufferInterior(False)
+    buf.setJoinStyle(Qt.RoundJoin)
     fmt.setBuffer(buf)
 
     pal.setFormat(fmt)
@@ -167,11 +183,11 @@ def run_generator(route, crs_authid, map_width, map_height, step):
         distance += step
 
     out.updateExtents()
+    apply_symbol(out)
     apply_labels(out)
     QgsProject.instance().addMapLayer(out)
     print(f'Created {sheet_id - 1} map sheets successfully.')
     print('Layout rotation expression:  (180 - "azi") % 360')
-    print('Label rotation expression:   ("azi" - 90 + 360) % 360')
 
 
 # ---------------------------------------------------------------
