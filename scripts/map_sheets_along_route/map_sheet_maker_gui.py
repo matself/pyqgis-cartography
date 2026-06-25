@@ -14,6 +14,14 @@
 #   5. In the Layout, set map rotation expression to:
 #         (180 - "azi") % 360
 #
+# Label rotation notes:
+#   azi is a geographic bearing (0=N, 90=E, CW positive).
+#   The sheet's long axis (MAP_WIDTH) runs parallel to the route.
+#   Correct label rotation expression:
+#         ("azi" - 90 + 360) % 360
+#   Also set "Show upside-down labels" to "when rotation defined".
+#   (The script pre-configures both automatically.)
+#
 # Collaboration:
 #   Developed jointly through discussion between
 #   Mats Elfström & ChatGPT (GPT-5), 2025.
@@ -28,6 +36,7 @@ from qgis.PyQt.QtWidgets import (
     QDialogButtonBox, QLabel, QCheckBox, QVBoxLayout, QGroupBox
 )
 from qgis.PyQt.QtCore import QVariant
+from qgis.PyQt.QtGui import QFont, QColor
 import math
 
 
@@ -87,6 +96,41 @@ def chain_lines(geoms):
 
 
 # ---------------------------------------------------------------
+# LABEL SETUP
+# azi is a geographic bearing (0=N, 90=E, CW).
+# Sheet long axis runs along azi. QGIS label rotation is CW from
+# east, so the correct expression is: (azi - 90 + 360) % 360.
+# upsidedownLabels=ShowDefined lets the expression work freely.
+# ---------------------------------------------------------------
+def apply_labels(layer):
+    pal = QgsPalLayerSettings()
+    pal.fieldName = 'id'
+    pal.isExpression = False
+    pal.placement = QgsPalLayerSettings.OverPoint
+    pal.upsidedownLabels = QgsPalLayerSettings.ShowDefined
+
+    pal.dataDefinedProperties().setProperty(
+        QgsPalLayerSettings.LabelRotation,
+        QgsProperty.fromExpression('("azi" - 90 + 360) % 360')
+    )
+
+    fmt = QgsTextFormat()
+    fmt.setFont(QFont("Arial", 10, QFont.Bold))
+    fmt.setSize(10)
+    fmt.setColor(QColor("black"))
+
+    buf = QgsTextBufferSettings()
+    buf.setEnabled(True)
+    buf.setSize(1)
+    buf.setColor(QColor("white"))
+    fmt.setBuffer(buf)
+
+    pal.setFormat(fmt)
+    layer.setLabeling(QgsVectorLayerSimpleLabeling(pal))
+    layer.setLabelsEnabled(True)
+
+
+# ---------------------------------------------------------------
 # MAIN GENERATOR  (original loop, unchanged)
 # ---------------------------------------------------------------
 def run_generator(route, crs_authid, map_width, map_height, step):
@@ -123,6 +167,7 @@ def run_generator(route, crs_authid, map_width, map_height, step):
         distance += step
 
     out.updateExtents()
+    apply_labels(out)
     QgsProject.instance().addMapLayer(out)
     print(f"✅ Created {sheet_id - 1} map sheets successfully.")
     print('Use rotation expression in layout:   (180 - "azi") % 360')
@@ -206,10 +251,13 @@ class MapSheetDialog(QDialog):
         overlap_form.addRow("Overlap:", self.overlap_spin)
         root.addWidget(overlap_group)
 
-        # --- Hint ---
-        hint = QLabel('Layout rotation: <tt>(180 - "azi") % 360</tt>')
-        hint.setWordWrap(True)
-        root.addWidget(hint)
+        # --- Hints ---
+        hints = QLabel(
+            'Layout rotation: <tt>(180 - "azi") % 360</tt><br>'
+            'Label rotation:&nbsp; <tt>("azi" - 90 + 360) % 360</tt>'
+        )
+        hints.setWordWrap(True)
+        root.addWidget(hints)
 
         # --- Buttons ---
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -258,6 +306,6 @@ class MapSheetDialog(QDialog):
 
 # ---------------------------------------------------------------
 # ENTRY POINT
-# --------------------------------------------------------------
+# ---------------------------------------------------------------
 dlg = MapSheetDialog()
 dlg.show()
